@@ -1,0 +1,16 @@
+
+POST http://localhost:3001/orders
+Content-Type: application/json
+
+{
+  "customerId": "95295736-5e0e-424f-b469-7451894a6e69",
+  "items": [
+    {
+      "productId": "d84764d9-26e6-48eb-aa66-8d0c303cbb97",
+      "quantity": 1
+    }
+  ]
+}
+
+### Get order
+GET http://localhost:3001/orders/7aaea88b-8b3f-4010-936d-0b06cdd48e0d
