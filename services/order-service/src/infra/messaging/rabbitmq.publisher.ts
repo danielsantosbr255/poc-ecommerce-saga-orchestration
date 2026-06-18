@@ -11,7 +11,7 @@ export class RabbitOrderPublisher implements IOrderPublisherPort {
     this.publisher = rabbit.createPublisher({
       confirm: true,
       maxAttempts: 2,
-      exchanges: [{ exchange: EXCHANGE, type: "topic" }],
+      exchanges: [{ exchange: EXCHANGE, type: "topic", durable: true }],
     });
   }
 
