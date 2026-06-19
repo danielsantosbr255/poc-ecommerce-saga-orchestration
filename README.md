@@ -36,9 +36,9 @@ Para garantir máxima flexibilidade, utilizamos uma **Topic Exchange**. Isso per
 
 | Exchange | Tipo | Routing Key | Fila Vinculada (Queue) | Fila de Falhas (DLQ) | Consumidor |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `ecommerce.events` | `topic` | `order.created` | `payment_process_queue` | `payment_process.dlq` | Payment Service |
-| `ecommerce.events` | `topic` | `payment.processed` | `order_update_queue` | `order_update.dlq` | Order Service |
-| `ecommerce.events` | `topic` | `order.*` / `payment.*` | `notification_queue` | `notification.dlq` | Notification Service |
+| `orders` | `topic` | `order.placed` | `payment.process` | `payment.process.dlq` | Payment Service |
+| `orders` | `topic` | `payment.processed` | `order.update` *(planejado)* | `order.update.dlq` *(planejado)* | Order Service |
+| `orders` | `topic` | `order.*` / `payment.*` | `notification.send` *(planejado)* | `notification.dlq` *(planejado)* | Notification Service |
 
 ---
 
@@ -46,24 +46,29 @@ Para garantir máxima flexibilidade, utilizamos uma **Topic Exchange**. Isso per
 
 Um dos pilares deste projeto é como ele lida com o caos. O fluxo de tratamento de erros segue regras estritas:
 
-### 1. Sistema de Retry com Exponential Backoff
+### 1. Sistema de Retry com Filas de Espera e TTL (RabbitMQ)
 
 Sistemas externos (como gateways de pagamento reais) costumam ter instabilidades. Se o Payment Service tentar comunicar com o Gateway simulado e falhar por um erro transitório (ex: *Timeout*), ele não descarta a mensagem.
 
-* **O Mecanismo:** O *worker* implementa um padrão de retentativa interno (no próprio código Go/Node) com *Exponential Backoff*.
-* **Exemplo:** Falhou a 1ª vez? Espera 2 segundos e tenta de novo. Falhou a 2ª? Espera 4 segundos. Falhou a 3ª? Espera 8 segundos. Se falhar após o limite máximo de tentativas, o erro deixa de ser transitório e passa a ser tratado como falha fatal.
+* **O Mecanismo:** Em vez de bloquear a thread de processamento com `sleep` no código do worker, utilizamos **Filas de Espera com TTL (Time-To-Live) e DLX (Dead Letter Exchange)** no próprio RabbitMQ.
+* **Fluxo de Retry:**
+  1. Falhou a 1ª vez? A mensagem é publicada na exchange `orders.retry` com a chave `retry.1`. Ela aguarda 5 segundos na fila `payment.process.wait.5s` até o TTL expirar.
+  2. Ao expirar, a fila a redireciona de volta para a exchange principal `orders` com a chave `order.placed` para reprocessamento.
+  3. Se falhar de novo, vai para `retry.2` (fila com 15 segundos de TTL).
+  4. Se falhar a 3ª vez, vai para `retry.3` (fila com 45 segundos de TTL).
+  5. Se falhar após o limite máximo de tentativas (`MaxRetries`), a mensagem é enviada de forma definitiva para a DLQ.
 
 ### 2. Dead Letter Queues (DLQs)
 
-Se uma mensagem não puder ser processada de forma alguma (ex: falha fatal após todos os retries, erro de validação de JSON, regra de negócio inválida), o consumidor emite um `.Nack(requeue=false)`.
+Se uma mensagem não puder ser processada de forma alguma (ex: falha fatal de validação de JSON, regra de negócio inválida ou limite máximo de retries excedido), o consumidor encaminha a mensagem para a DLQ e emite um `.Ack()`.
 
-* **Isolamento Absoluto:** **Cada fila principal possui sua própria DLQ correspondente.** (ex: mensagens rejeitadas da `payment_process_queue` vão automaticamente para a `payment_process.dlq`).
-* **Por que não uma DLQ única?** Ter uma DLQ para cada fila facilita imensamente o monitoramento e o processo de *Replay*. Se houver um bug no Payment Service, saberemos exatamente onde as mensagens presas estão e poderemos reprocessá-las no futuro sem misturá-las com mensagens de erro de Notificações.
+* **Isolamento Absoluto:** **Cada fila principal possui sua própria DLQ correspondente.** (ex: mensagens rejeitadas da `payment.process` vão automaticamente para a `payment.process.dlq`).
+* **Por que não uma DLQ única?** Ter uma DLQ para cada fila facilita imensamente o monitoramento e o processo de *Replay*. Se houver um bug no Payment Service, saberemos exatamente onde as mensagens presas estão e poderemos reprocessá-las no futuro sem misturá-las com mensagens de erro de outros serviços.
 
 ### 3. Idempotência e Graceful Shutdown
 
-* **Idempotência:** Antes de qualquer ação mutável (como processar um pagamento), o serviço consulta seu banco de dados local. Se o `order_id` já foi processado anteriormente, a mensagem recebe um `.Ack()` imediato e é ignorada.
-* **Graceful Shutdown:** Ao receber um sinal de desligamento do Docker (SIGTERM), os serviços param de aceitar novas mensagens da fila, terminam de processar as que já estão em memória, garantem o `.Ack()` e só então encerram suas conexões com segurança.
+* **Idempotência Resiliente:** Antes de qualquer ação mutável (como processar um pagamento), o serviço consulta seu repositório local. Se o `order_id` já foi processado anteriormente, o worker realiza o `.Ack()` imediato para evitar dupla cobrança. Adicionalmente, ele **reconstrói e republica** o evento original de sucesso (`payment.processed`), garantindo a consistência do ecossistema caso a notificação original tenha se perdido.
+* **Graceful Shutdown:** Ao receber um sinal de desligamento (SIGTERM/SIGINT), o worker sinaliza ao RabbitMQ que pare de aceitar novas mensagens, finaliza o processamento das mensagens que já estão em execução paralela na memória, garante o respectivo `.Ack()` e encerra a conexão de forma segura.
 
 ---
 
