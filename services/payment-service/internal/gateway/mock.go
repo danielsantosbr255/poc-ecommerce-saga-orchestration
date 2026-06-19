@@ -9,28 +9,15 @@ import (
 	"time"
 )
 
-// ErrTransient signals a temporary failure that may succeed on retry.
-// The consumer uses this sentinel to route the message to the appropriate
-// TTL wait queue instead of sending it straight to the DLQ.
 var ErrTransient = errors.New("gateway: transient error, eligible for retry")
 
-// MockGateway simulates a real external payment provider with realistic
-// latency and a configurable probability of transient failure.
-//
-// Behaviour:
-//   - ~80% success: sleeps 200–500ms and returns a UUID transaction ID.
-//   - ~20% failure: sleeps 100ms (fast-fail) and returns ErrTransient,
-//     so the consumer exercises the full retry + wait-queue path.
 type MockGateway struct{}
 
-// NewMockGateway constructs a MockGateway.
 func NewMockGateway() *MockGateway {
 	return &MockGateway{}
 }
 
-// Charge implements PaymentGateway.
 func (g *MockGateway) Charge(ctx context.Context, orderID string) (string, error) {
-	// Simulate ~20% transient failure (e.g. gateway timeout, 503)
 	n, err := rand.Int(rand.Reader, big.NewInt(100))
 	if err != nil {
 		return "", ErrTransient
