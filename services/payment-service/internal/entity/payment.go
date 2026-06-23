@@ -44,6 +44,7 @@ type PaymentStatus string
 const (
 	StatusApproved PaymentStatus = "APPROVED"
 	StatusRejected PaymentStatus = "REJECTED"
+	StatusRefunded PaymentStatus = "REFUNDED"
 )
 
 // Payment is the internal domain entity persisted after processing.
