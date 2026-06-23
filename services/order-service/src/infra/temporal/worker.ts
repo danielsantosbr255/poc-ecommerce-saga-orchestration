@@ -12,7 +12,7 @@ export async function startTemporalWorker() {
     connection,
     namespace: "default",
     taskQueue: "order-saga-task-queue",
-    workflowsPath: new URL("./workflows.js", import.meta.url).pathname,
+    workflowsPath: new URL(import.meta.url.endsWith(".ts") ? "./workflows.ts" : "./workflows.js", import.meta.url).pathname,
     activities,
   });
 

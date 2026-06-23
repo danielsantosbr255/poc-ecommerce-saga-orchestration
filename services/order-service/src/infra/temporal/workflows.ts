@@ -24,14 +24,17 @@ const { updateOrderStatus } = proxyActivities<typeof OrderActivities>({
 const payment = proxyActivities<PaymentActivities>({
   startToCloseTimeout: "1 minute",
   retry: { maximumAttempts: 3 },
+  taskQueue: "payment-service-task-queue",
 });
 
 const shipping = proxyActivities<ShippingActivities>({
   startToCloseTimeout: "1 minute",
+  taskQueue: "shipping-service-task-queue",
 });
 
 const notification = proxyActivities<NotificationActivities>({
   startToCloseTimeout: "10 seconds",
+  taskQueue: "notification-service-task-queue",
 });
 
 export async function OrderSagaWorkflow(orderId: string): Promise<void> {
