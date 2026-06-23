@@ -28,15 +28,19 @@ func main() {
 	}
 	defer c.Close()
 
-	w := worker.New(c, "order-saga-task-queue", worker.Options{})
+	w := worker.New(c, "shipping-service-task-queue", worker.Options{})
 
 	w.RegisterActivity(activities.ShipOrder)
 
-	err = w.Run(worker.InterruptCh())
+	slog.Info("shipping-service starting Temporal worker on shipping-service-task-queue")
+	err = w.Start()
 	if err != nil {
-		slog.Error("Unable to start worker", "error", err)
+		slog.Error("Unable to start Temporal worker", "error", err)
 		os.Exit(1)
 	}
+
+	slog.Info("Started Worker", "Namespace", "default", "TaskQueue", "shipping-service-task-queue")
+	select {}
 }
 
 func setupLogger() {

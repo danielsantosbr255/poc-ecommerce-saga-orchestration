@@ -35,14 +35,19 @@ func main() {
 	}
 	defer c.Close()
 
-	w := worker.New(c, "order-saga-task-queue", worker.Options{})
+	w := worker.New(c, "payment-service-task-queue", worker.Options{})
 
 	w.RegisterActivity(activities.ProcessPayment)
 	w.RegisterActivity(activities.RefundPayment)
 
-	err = w.Run(worker.InterruptCh())
+	slog.Info("payment-service starting Temporal worker on payment-service-task-queue")
+	err = w.Start()
 	if err != nil {
-		slog.Error("Unable to start worker", "error", err)
+		slog.Error("Unable to start Temporal worker", "error", err)
 		os.Exit(1)
 	}
+
+	slog.Info("Started Worker", "Namespace", "default", "TaskQueue", "payment-service-task-queue")
+	
+	select {}
 }

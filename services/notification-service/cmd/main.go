@@ -28,13 +28,16 @@ func main() {
 	}
 	defer c.Close()
 
-	w := worker.New(c, "order-saga-task-queue", worker.Options{})
-
+	w := worker.New(c, "notification-service-task-queue", worker.Options{})
 	w.RegisterActivity(activities.NotifyCustomer)
 
-	err = w.Run(worker.InterruptCh())
+	slog.Info("notification-service starting Temporal worker on notification-service-task-queue")
+	err = w.Start()
 	if err != nil {
-		slog.Error("Unable to start worker", "error", err)
+		slog.Error("Unable to start Temporal worker", "error", err)
 		os.Exit(1)
 	}
+
+	slog.Info("Started Worker", "Namespace", "default", "TaskQueue", "notification-service-task-queue")
+	select {}
 }
