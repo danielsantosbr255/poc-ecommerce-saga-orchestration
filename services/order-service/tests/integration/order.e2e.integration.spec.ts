@@ -1,24 +1,27 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { RabbitMQContainer, type StartedRabbitMQContainer } from "@testcontainers/rabbitmq";
 import { drizzle } from "drizzle-orm/node-postgres";
 import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import pg from "pg";
-import { Connection } from "rabbitmq-client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../../src/infra/database/schema.js";
-import type { OrderPlacedEvent } from "../../src/order/order.events.js";
+import * as temporalClient from "../../src/infra/temporal/client.js";
 import { OrderModule } from "../../src/order/order.module.js";
 import errorHandlerPlugin from "../../src/plugins/error-handler.plugin.js";
 
+// Mock Temporal Client and Worker to prevent connection attempts during tests
+vi.mock("../../src/infra/temporal/client.js", () => ({
+  initTemporalClient: vi.fn().mockResolvedValue(undefined),
+  startOrderSaga: vi.fn().mockResolvedValue({ workflowId: "mock-id" }),
+}));
+
+vi.mock("../../src/infra/temporal/worker.js", () => ({
+  startTemporalWorker: vi.fn().mockResolvedValue(undefined),
+  stopTemporalWorker: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Container image definitions for Testcontainers
 const POSTGRES_IMAGE = "postgres:18-alpine";
-const RABBITMQ_IMAGE = "rabbitmq:4.3-management-alpine";
-
-const RABBIT_USER = "test";
-const RABBIT_PASS = "test";
-const EXCHANGE_NAME = "orders";
-const ROUTING_KEY = "order.placed";
 
 // Helper to construct a test order payload
 function buildCreateOrderPayload() {
@@ -28,18 +31,9 @@ function buildCreateOrderPayload() {
   } as const;
 }
 
-// Helper to build AMQP connection URL with credentials
-function buildAmqpUrl(container: StartedRabbitMQContainer): string {
-  const host = container.getHost();
-  const port = container.getMappedPort(5672);
-  return `amqp://${RABBIT_USER}:${RABBIT_PASS}@${host}:${port}`;
-}
-
 describe("OrderService E2E Integration (Testcontainers)", () => {
   let pgContainer: StartedPostgreSqlContainer;
   let pgClient: pg.Client;
-  let rabbitContainer: StartedRabbitMQContainer;
-  let rabbit: Connection;
   let app: ReturnType<typeof Fastify>;
 
   beforeAll(async () => {
@@ -60,31 +54,9 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
         created_at TIMESTAMP WITH TIME ZONE NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE NOT NULL
       );
-
-      CREATE TABLE outbox (
-        id UUID PRIMARY KEY,
-        aggregate_type VARCHAR(50) NOT NULL,
-        aggregate_id VARCHAR(100) NOT NULL,
-        event_type VARCHAR(100) NOT NULL,
-        payload JSONB NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        processed BOOLEAN DEFAULT FALSE NOT NULL,
-        processed_at TIMESTAMP WITH TIME ZONE
-      );
     `);
 
     const db = drizzle(pgClient, { schema });
-
-    // Spin up real message broker instance via Testcontainers
-    rabbitContainer = await new RabbitMQContainer(RABBITMQ_IMAGE)
-      .withEnvironment({
-        RABBITMQ_DEFAULT_USER: RABBIT_USER,
-        RABBITMQ_DEFAULT_PASS: RABBIT_PASS,
-      })
-      .start();
-
-    // Connect to the Testcontainers RabbitMQ instance
-    rabbit = new Connection({ url: buildAmqpUrl(rabbitContainer) });
 
     // Bootstrap Fastify application
     app = Fastify();
@@ -92,11 +64,13 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
     app.setSerializerCompiler(serializerCompiler);
     app.register(errorHandlerPlugin);
 
-    // Inject the database and broker connection dependencies
+    // Inject the database connection
     app.decorate("db", db);
-    app.decorate("rabbit", rabbit);
 
-    // Register routes and wait for the application to be fully ready
+    // We no longer need to register temporalPlugin explicitly here
+    // because we are injecting OrderModule in a testing context, but if it is used, it's mocked.
+    // In our real app, temporalPlugin is in app.ts, but here we only register OrderModule.
+    // This perfectly tests the domain logic without starting Temporal infra.
     app.register(OrderModule, { prefix: "/orders" });
     await app.ready();
   });
@@ -104,10 +78,9 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
   afterAll(async () => {
     // Teardown services in reverse order of initialization
     await app?.close();
-    await rabbit?.close();
     await pgClient?.end();
-    await rabbitContainer?.stop();
     await pgContainer?.stop();
+    vi.restoreAllMocks();
   });
 
   it("should verify Postgres container is running and accessible", async () => {
@@ -115,52 +88,23 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
     expect(result.rows[0]?.ready).toBe(1);
   });
 
-  it("should create an order via HTTP and publish an OrderPlaced event to RabbitMQ", async () => {
+  it("should create an order via HTTP and start Temporal Saga", async () => {
     const payload = buildCreateOrderPayload();
-    let receivedEvent: OrderPlacedEvent | null = null;
 
-    // Listen to the broker for the expected integration event
-    const consumer = rabbit.createConsumer(
-      {
-        queue: "test-order-placed",
-        queueOptions: { autoDelete: true, exclusive: true },
-        exchanges: [{ exchange: EXCHANGE_NAME, type: "topic", durable: true }],
-        queueBindings: [{ exchange: EXCHANGE_NAME, routingKey: ROUTING_KEY }],
-      },
-      async msg => {
-        receivedEvent = msg.body as OrderPlacedEvent;
-      },
-    );
+    // Execute HTTP request using Fastify's in-memory light-my-request
+    const response = await app.inject({
+      method: "POST",
+      url: "/orders",
+      payload,
+    });
 
-    try {
-      // Small pause to guarantee broker bindings are active before request
-      await new Promise(resolve => setTimeout(resolve, 500));
+    expect(response.statusCode).toBe(201);
 
-      // Execute HTTP request using Fastify's in-memory light-my-request
-      const response = await app.inject({
-        method: "POST",
-        url: "/orders",
-        payload,
-      });
+    const body = response.json() as { orderId: string; status: string };
+    expect(body.orderId).toBeDefined();
+    expect(body.status).toBe("PENDING");
 
-      expect(response.statusCode).toBe(201);
-
-      const body = response.json() as { orderId: string; status: string };
-      expect(body.orderId).toBeDefined();
-      expect(body.status).toBe("PENDING");
-
-      // Wait for the async consumer to capture the event published by the service
-      await vi.waitFor(
-        () => {
-          expect(receivedEvent).toBeDefined();
-          expect(receivedEvent?.payload.customerId).toBe(payload.customerId);
-          expect(receivedEvent?.payload.orderId).toBe(body.orderId);
-        },
-        { interval: 100, timeout: 3_000 },
-      );
-    } finally {
-      // Ensure the test consumer is closed to avoid resource leaks
-      await consumer.close();
-    }
+    // Verify the Temporal Saga was triggered
+    expect(temporalClient.startOrderSaga).toHaveBeenCalledWith(body.orderId);
   });
 });

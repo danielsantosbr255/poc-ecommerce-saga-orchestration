@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OrderEntity } from "./order.entity.js";
 import { OrdersService } from "./order.service.js";
 import { InMemoryOrdersRepository } from "./repositories/order.repository.in-memory.js";
+
+vi.mock("../infra/temporal/client.js", () => ({
+  startOrderSaga: vi.fn().mockResolvedValue({ workflowId: "mock-id" }),
+}));
 
 describe("OrdersService", () => {
   it("should create an order, save it, and save an outbox event", async () => {
@@ -21,20 +25,6 @@ describe("OrdersService", () => {
 
     const savedOrder = await fakeRepo.findById(order.id);
     expect(savedOrder).toEqual(order);
-
-    expect(fakeRepo.outbox).toHaveLength(1);
-    expect(fakeRepo.outbox[0]).toMatchObject({
-      aggregateId: order.id,
-      eventType: "order.placed",
-      payload: expect.objectContaining({
-        eventId: expect.any(String),
-        payload: {
-          orderId: order.id,
-          customerId: order.customerId,
-          items: order.items,
-        },
-      }),
-    });
   });
 
   it("should return an order if found by id", async () => {

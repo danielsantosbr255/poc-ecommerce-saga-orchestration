@@ -1,30 +1,16 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import { OutboxRelay } from "../infra/messaging/outbox.relay.js";
-import { RabbitOrderConsumer } from "../infra/messaging/rabbitmq.consumer.js";
-import { RabbitOrderPublisher } from "../infra/messaging/rabbitmq.publisher.js";
+import { initActivities } from "../infra/temporal/activities.js";
 import { createOrderRouteSchema, getOrderRouteSchema } from "./order.schemas.js";
 import { OrdersService } from "./order.service.js";
 import { DrizzleOrdersRepository } from "./repositories/order.repository.drizzle.js";
 
 export const OrderModule: FastifyPluginAsync = async app => {
   const repository = new DrizzleOrdersRepository(app.db);
-  const publisher = new RabbitOrderPublisher(app.rabbit);
   const service = new OrdersService(repository);
-  const outboxRelay = new OutboxRelay(app.db, publisher, app.log);
-  const consumer = new RabbitOrderConsumer(app.rabbit, service, app.log);
 
+  initActivities(service);
   const api = app.withTypeProvider<ZodTypeProvider>();
-
-  api.addHook("onReady", async () => {
-    outboxRelay.start();
-  });
-
-  api.addHook("onClose", async () => {
-    outboxRelay.stop();
-    await consumer.close();
-    await publisher.close();
-  });
 
   api.post("/", { schema: createOrderRouteSchema }, async (request, reply) => {
     const order = await service.create(request.body, request.id);

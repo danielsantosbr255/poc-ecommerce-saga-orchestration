@@ -1,6 +1,6 @@
 import { ResourceNotFoundError } from "../core/errors/app.errors.js";
+import { startOrderSaga } from "../infra/temporal/client.js";
 import { OrderEntity } from "./order.entity.js";
-import { buildOrderPlacedEvent } from "./order.events.js";
 import type { CreateOrderBody } from "./order.schemas.js";
 import type { IOrdersRepository } from "./order.types.js";
 
@@ -10,10 +10,8 @@ export class OrdersService {
   async create(input: CreateOrderBody, _correlationId?: string): Promise<OrderEntity> {
     const order = OrderEntity.create(input);
 
-    await this.repository.save(order, {
-      eventType: "order.placed",
-      payload: buildOrderPlacedEvent(order),
-    });
+    await this.repository.save(order);
+    await startOrderSaga(order.id);
     return order;
   }
 

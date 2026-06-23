@@ -2,12 +2,12 @@ import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../order.db-schema.js";
 import { OrderEntity } from "../order.entity.js";
-import type { IOrdersRepository, OutboxEventInput } from "../order.types.js";
+import type { IOrdersRepository } from "../order.types.js";
 
 export class DrizzleOrdersRepository implements IOrdersRepository {
   constructor(private readonly db: NodePgDatabase<typeof schema>) {}
 
-  async save(order: OrderEntity, outboxEvent?: OutboxEventInput): Promise<OrderEntity> {
+  async save(order: OrderEntity): Promise<OrderEntity> {
     const data = order.toJSON();
 
     await this.db.transaction(async tx => {
@@ -29,16 +29,6 @@ export class DrizzleOrdersRepository implements IOrdersRepository {
             updatedAt: data.updatedAt,
           },
         });
-
-      if (outboxEvent) {
-        await tx.insert(schema.outbox).values({
-          id: crypto.randomUUID(),
-          aggregateType: "order",
-          aggregateId: data.id,
-          eventType: outboxEvent.eventType,
-          payload: outboxEvent.payload,
-        });
-      }
     });
 
     return order;
