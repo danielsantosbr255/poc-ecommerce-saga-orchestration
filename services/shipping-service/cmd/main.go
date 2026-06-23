@@ -1,67 +1,42 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
-	"os/signal"
-	"sync"
-	"syscall"
 
-	"github.com/danielsantosbr255/shipping-service/internal/config"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
+
 	"github.com/danielsantosbr255/shipping-service/internal/gateway"
-	"github.com/danielsantosbr255/shipping-service/internal/worker"
+	temporalWorker "github.com/danielsantosbr255/shipping-service/internal/worker"
 )
 
 func main() {
 	setupLogger()
-	cfg := config.Load()
 
-	slog.Info("shipping-service starting", "rabbitmq_url", cfg.RabbitMQURL)
-
-	slog.Info("connecting to RabbitMQ", "url", cfg.RabbitMQURL)
-	conn, err := config.Connect(cfg.RabbitMQURL)
-	if err != nil {
-		slog.Error("failed to connect to RabbitMQ", "error", err)
-		os.Exit(1)
-	}
-	defer conn.Close()
-	slog.Info("connected to RabbitMQ successfully")
-
-	publisher, err := worker.NewPublisher(conn)
-	if err != nil {
-		slog.Error("failed to initialize publisher", "error", err)
-		os.Exit(1)
-	}
-	defer publisher.Close()
+	slog.Info("shipping-service starting Temporal worker")
 
 	carrierMock := gateway.NewCarrierMock()
-	handler := worker.NewHandler(carrierMock)
+	activities := temporalWorker.NewShippingActivities(carrierMock)
 
-	consumer := worker.NewConsumer(conn, handler, publisher, cfg.QOSPrefetch, cfg.MaxRetries)
+	c, err := client.Dial(client.Options{
+		HostPort: os.Getenv("TEMPORAL_ADDRESS"),
+	})
+	if err != nil {
+		slog.Error("Unable to create Temporal client", "error", err)
+		os.Exit(1)
+	}
+	defer c.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	w := worker.New(c, "order-saga-task-queue", worker.Options{})
 
-	var wg sync.WaitGroup
+	w.RegisterActivity(activities.ShipOrder)
 
-	// Start consumer
-	go func() {
-		if err := consumer.Run(ctx, &wg); err != nil {
-			slog.Error("consumer stopped with error", "error", err)
-			cancel()
-		}
-	}()
-
-	// Graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
-
-	slog.Info("shutdown signal received — waiting for in-flight messages to finish")
-	cancel()
-	wg.Wait()
-	slog.Info("all messages processed — shipping-service stopped cleanly")
+	err = w.Run(worker.InterruptCh())
+	if err != nil {
+		slog.Error("Unable to start worker", "error", err)
+		os.Exit(1)
+	}
 }
 
 func setupLogger() {
