@@ -17,8 +17,8 @@ export const orderSchema = z.object({
   customerId: z.uuid(),
   items: z.array(orderItemSchema),
   status: orderStatuses,
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 // ── Route schemas ──────────────────────────────────────────────────
