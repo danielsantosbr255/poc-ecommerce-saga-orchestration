@@ -3,7 +3,7 @@
   "compilerOptions": {
     // File Layout
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./",
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",
@@ -35,6 +35,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts", "tests/**/*"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": []
 }

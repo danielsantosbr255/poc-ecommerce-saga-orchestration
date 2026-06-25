@@ -28,7 +28,7 @@ describe("OrdersService", () => {
     expect(order.id).toBeDefined();
     expect(order.status).toBe("PENDING");
     expect(order.customerId).toBe(input.customerId);
-    expect(order.items).toEqual([{ productId: input.items[0].productId, quantity: 2, unitPrice: 5000 }]);
+    expect(order.items).toEqual([{ productId: input.items[0]?.productId, quantity: 2, unitPrice: 5000 }]);
     expect(order.totalAmount).toBe(10000);
 
     const savedOrder = await fakeRepo.findById(order.id);

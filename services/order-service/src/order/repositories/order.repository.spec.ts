@@ -7,7 +7,7 @@ describe("InMemoryOrdersRepository", () => {
     const repository = new InMemoryOrdersRepository();
     const order = OrderEntity.create({
       customerId: crypto.randomUUID(),
-      items: [{ productId: crypto.randomUUID(), quantity: 1 }],
+      items: [{ productId: crypto.randomUUID(), quantity: 1, unitPrice: 1500 }],
     });
 
     const savedOrder = await repository.save(order);
