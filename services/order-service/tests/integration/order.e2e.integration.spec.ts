@@ -50,6 +50,7 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
         id UUID PRIMARY KEY,
         customer_id UUID NOT NULL,
         items JSONB NOT NULL,
+        total_amount INTEGER NOT NULL,
         status VARCHAR(50) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL,
         updated_at TIMESTAMP WITH TIME ZONE NOT NULL
@@ -116,6 +117,6 @@ describe("OrderService E2E Integration (Testcontainers)", () => {
     expect(body.status).toBe("PENDING");
 
     // Verify the Temporal Saga was triggered
-    expect(temporalClient.startOrderSaga).toHaveBeenCalledWith(body.orderId, payload.customerId, 100);
+    expect(temporalClient.startOrderSaga).toHaveBeenCalledWith(body.orderId, payload.customerId, 1500);
   });
 });
