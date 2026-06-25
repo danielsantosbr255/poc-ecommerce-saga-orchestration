@@ -8,6 +8,7 @@ export const orderStatuses = z.enum(["PENDING", "PAID", "SHIPPED", "DELIVERED", 
 export const orderItemSchema = z.object({
   productId: z.uuid(),
   quantity: z.number().int().positive(),
+  unitPrice: z.number().int().positive(),
 });
 
 // ── Entity schema (single source of truth) ─────────────────────────
@@ -16,6 +17,7 @@ export const orderSchema = z.object({
   id: z.uuid(),
   customerId: z.uuid(),
   items: z.array(orderItemSchema),
+  totalAmount: z.number().int().positive(),
   status: orderStatuses,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -23,9 +25,14 @@ export const orderSchema = z.object({
 
 // ── Route schemas ──────────────────────────────────────────────────
 
+export const createOrderItemSchema = z.object({
+  productId: z.uuid(),
+  quantity: z.number().int().positive(),
+});
+
 export const createOrderBodySchema = z.object({
   customerId: z.uuid(),
-  items: z.array(orderItemSchema).min(1),
+  items: z.array(createOrderItemSchema).min(1),
 });
 
 export const createOrderResponseSchema = z.object({
