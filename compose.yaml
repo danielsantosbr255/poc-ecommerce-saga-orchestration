@@ -70,7 +70,10 @@ services:
       context: ./services/payment-service
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/orders
     depends_on:
+      postgres:
+        condition: service_healthy
       temporal:
         condition: service_started
     restart: unless-stopped
@@ -82,7 +85,10 @@ services:
       context: ./services/shipping-service
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/orders
     depends_on:
+      postgres:
+        condition: service_healthy
       temporal:
         condition: service_started
     restart: unless-stopped
@@ -94,7 +100,10 @@ services:
       context: ./services/notification-service
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/orders
     depends_on:
+      postgres:
+        condition: service_healthy
       temporal:
         condition: service_started
     restart: unless-stopped
