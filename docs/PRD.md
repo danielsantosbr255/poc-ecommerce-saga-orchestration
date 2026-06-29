@@ -28,11 +28,11 @@ O sistema opera de forma distribuída (microsserviços), adotando o padrão **Sa
 
 ### NFR-01: Durabilidade de Execução (Execution Durability)
 
-Ao adotar Temporal, não há perda de eventos em trânsito. O workflow emite um comando de atividade e dorme aguardando o resultado. Se o servidor cair, ao voltar, ele lê a tabela de history do Temporal Server e retoma exatamente da linha de código em que havia parado. O Dual-Write Problem não se aplica mais.
+Ao adotar Temporal, não há perda de eventos em trânsito. A criação do pedido no banco de dados e a orquestração dos serviços periféricos ocorrem dentro do workflow. Se o servidor cair, ao voltar, ele lê a tabela de history do Temporal Server e retoma exatamente da linha de código em que havia parado. O Dual-Write Problem é eliminado ao delegar a persistência do pedido para a primeira atividade (`createOrder`) do próprio workflow.
 
 ### NFR-02: Garantia de Idempotência
 
-Todas as Activities implementadas em Go (`ProcessPayment`, `RefundPayment`, `ShipOrder`) são idempotentes. Se o servidor Temporal reenviar uma tarefa já concluída (devido a perda de acknowledgment na rede), a atividade identifica no banco de dados local que o passo foi executado e não o repete (como evitar dupla cobrança no cartão).
+Todas as Activities implementadas em Go (`ProcessPayment`, `RefundPayment`, `ShipOrder`) e a activity em TS (`createOrder`) são idempotentes. Se o servidor Temporal reenviar uma tarefa já concluída (devido a perda de acknowledgment na rede), a atividade identifica no banco de dados local que o passo foi executado e não o repete (como evitar dupla cobrança no cartão ou duplicidade de registro no banco).
 
 ### NFR-03: Tolerância a Falhas Temporárias e Backoff
 
@@ -46,8 +46,9 @@ O código se tornou declarativo e puramente procedural na ponta do Orquestrador 
 
 ### Visão do Orquestrador
 
-1. Recebe a solicitação `StartWorkflow` de criação de Order do Controller da API (Node.js/Fastify).
-2. Coordena os Workers em Go através de invocação de **Activities**.
+1. Recebe a solicitação `StartWorkflow` com os dados validados do Controller da API (Node.js/Fastify) de forma assíncrona.
+2. Persiste a order no banco de dados local (`Order Service`) através da activity local `createOrder`.
+3. Coordena os Workers em Go através de invocação de **Activities** (`ProcessPayment`, `ShipOrder`, etc.).
 
 ### Design Simplificado de Componentes
 
