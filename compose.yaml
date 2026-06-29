@@ -63,6 +63,23 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  order-service-worker:
+    image: ecommerce-saga/order-service:latest
+    container_name: order-service-worker
+    build:
+      context: ./services/order-service
+      target: prod
+    command: ["dist/main/worker.js"]
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/orders
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    restart: unless-stopped
+
   payment-service:
     image: ecommerce-saga/payment-service:latest
     container_name: payment-service
