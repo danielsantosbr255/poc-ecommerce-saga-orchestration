@@ -91,17 +91,20 @@ tests/                               # Apenas testes que necessitam de infraestr
 
 O Caso de Uso deve receber as portas (interfaces) em seu construtor e operar apenas com tipos do Domínio e DTOs da Aplicação. **Proibido importar SDKs externos ou módulos do Drizzle aqui.**
 
+> [!NOTE]
+> **Evitando Dual-Write:** Para fluxos críticos de criação que envolvem coordenação de microsserviços (como o de criação de pedido), a persistência pode ser delegada para uma atividade dentro do próprio workflow do Temporal. Nesse cenário, o Use-Case não recebe a porta do repositório de banco diretamente, mas sim a porta do orquestrador de Saga (`ISagaOrchestrator`), que inicia o workflow de forma resiliente. Já casos de uso de leitura (ex: `GetOrderUseCase`) continuam injetando a porta de repositório (`IOrderRepository`) diretamente.
+
 ```typescript
 export class ExemploCreateOrderUseCase {
   constructor(
-    private readonly orderRepositoryPort: IOrderRepository,
+    private readonly productCatalogPort: IProductCatalog,
     private readonly sagaOrchestratorPort: ISagaOrchestrator
   ) {}
 
   async execute(dto: CreateOrderInputDTO): Promise<CreateOrderOutputDTO> {
-    // 1. Instancia domínio (que se autovalida)
-    // 2. Persiste através da interface da porta
-    // 3. Inicia SAGA através da interface da porta
+    // 1. Busca preços/dados externos via porta do catálogo
+    // 2. Instancia entidade de domínio (que se autovalida - fail-fast)
+    // 3. Inicia SAGA de forma resiliente via porta do orquestrador (que persistirá a order via Activity)
   }
 }
 ```
