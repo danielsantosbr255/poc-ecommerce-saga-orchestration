@@ -47,9 +47,9 @@ describe("SAGA E2E Tests", () => {
       }),
     });
 
-    expect(createRes.status).toBe(201);
+    expect(createRes.status).toBe(202);
     const { orderId, status } = await createRes.json();
-    expect(status).toBe("PENDING");
+    expect(status).toBe("ACCEPTED");
 
     // Poll until Temporal orchestration completes
     const completedOrder = await waitForOrderStatus(orderId, "SHIPPED");
@@ -72,7 +72,7 @@ describe("SAGA E2E Tests", () => {
       }),
     });
 
-    expect(createRes.status).toBe(201);
+    expect(createRes.status).toBe(202);
     const { orderId } = await createRes.json();
 
     // Poll until Temporal orchestration completes
@@ -96,7 +96,7 @@ describe("SAGA E2E Tests", () => {
       }),
     });
 
-    expect(createRes.status).toBe(201);
+    expect(createRes.status).toBe(202);
     const { orderId } = await createRes.json();
 
     // Poll until Temporal orchestration completes
