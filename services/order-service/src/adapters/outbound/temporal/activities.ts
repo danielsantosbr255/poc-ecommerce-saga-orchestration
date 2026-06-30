@@ -9,20 +9,7 @@ export function createActivities(
 ) {
   return {
     async createOrder(input: CreateOrderActivityInput): Promise<void> {
-      const now = new Date().toISOString();
-      const order = OrderEntity.restore({
-        id: input.orderId,
-        customerId: input.customerId,
-        items: input.items.map(i => ({
-          productId: i.productId,
-          quantity: i.quantity,
-          unitPrice: i.unitPriceCents,
-        })),
-        totalAmount: input.totalAmountCents,
-        status: "PENDING",
-        createdAt: now,
-        updatedAt: now,
-      });
+      const order = OrderEntity.restore(input.order);
       await orderRepository.createWithIdempotency(order, input.idempotencyKey);
     },
 

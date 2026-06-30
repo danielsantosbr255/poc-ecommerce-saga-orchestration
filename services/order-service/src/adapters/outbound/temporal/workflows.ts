@@ -37,17 +37,17 @@ export async function OrderSagaWorkflow(input: CreateOrderActivityInput): Promis
     await orderActivities.createOrder(input);
 
     // Step 1: Process Payment
-    await payment.ProcessPayment(input.orderId, input.customerId, input.totalAmountCents);
+    await payment.ProcessPayment(input.order.id, input.order.customerId, input.order.totalAmount);
     paymentProcessed = true;
-    await orderActivities.updateOrderStatus(input.orderId, "PAID");
+    await orderActivities.updateOrderStatus(input.order.id, "PAID");
 
     // Step 2: Ship Order
-    await shipping.ShipOrder(input.orderId, input.customerId);
+    await shipping.ShipOrder(input.order.id, input.order.customerId);
     shippingProcessed = true;
-    await orderActivities.updateOrderStatus(input.orderId, "SHIPPED");
+    await orderActivities.updateOrderStatus(input.order.id, "SHIPPED");
 
     // Step 3: Notify Customer (Success)
-    await notification.NotifyCustomer(input.orderId, "Your order has been shipped successfully.");
+    await notification.NotifyCustomer(input.order.id, "Your order has been shipped successfully.");
   } catch (err) {
     // Compensation Logic
     if (shippingProcessed) {
@@ -56,11 +56,11 @@ export async function OrderSagaWorkflow(input: CreateOrderActivityInput): Promis
     }
 
     if (paymentProcessed) {
-      await payment.RefundPayment(input.orderId, input.customerId, input.totalAmountCents);
+      await payment.RefundPayment(input.order.id, input.order.customerId, input.order.totalAmount);
     }
 
-    await orderActivities.updateOrderStatus(input.orderId, "CANCELED");
-    await notification.NotifyCustomer(input.orderId, "Your order was canceled and refunded.");
+    await orderActivities.updateOrderStatus(input.order.id, "CANCELED");
+    await notification.NotifyCustomer(input.order.id, "Your order was canceled and refunded.");
 
     throw err; // Rethrow to mark workflow as failed, or return to mark as success with compensation.
   }

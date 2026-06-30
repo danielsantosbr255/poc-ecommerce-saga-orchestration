@@ -1,3 +1,5 @@
+import type { OrderSnapshot } from "../../../domain/entities/order.entity.js";
+
 export interface PaymentActivities {
   ProcessPayment(orderId: string, customerId: string, amount: number): Promise<void>;
   RefundPayment(orderId: string, customerId: string, amount: number): Promise<void>;
@@ -12,9 +14,6 @@ export interface NotificationActivities {
 }
 
 export interface CreateOrderActivityInput {
-  orderId: string;
-  customerId: string;
-  totalAmountCents: number;
-  items: { productId: string; quantity: number; unitPriceCents: number }[];
+  order: OrderSnapshot;
   idempotencyKey: string;
 }

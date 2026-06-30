@@ -20,19 +20,7 @@ export class TemporalSagaAdapter implements ISagaOrchestrator {
   async startOrderSaga(order: OrderEntity, idempotencyKey: string): Promise<void> {
     try {
       await this.client.workflow.start(OrderSagaWorkflow, {
-        args: [
-          {
-            orderId: order.id,
-            customerId: order.customerId,
-            totalAmountCents: order.totalAmount.cents,
-            items: order.items.map(i => ({
-              productId: i.productId,
-              quantity: i.quantity,
-              unitPriceCents: i.unitPrice.cents,
-            })),
-            idempotencyKey,
-          },
-        ],
+        args: [{ order: order.toSnapshot(), idempotencyKey }],
         taskQueue: "order-saga-task-queue",
         workflowId: `order-saga-${idempotencyKey}`,
         workflowIdReusePolicy: WorkflowIdReusePolicy.REJECT_DUPLICATE,
